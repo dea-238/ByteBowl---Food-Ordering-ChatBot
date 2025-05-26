@@ -159,3 +159,32 @@ def remove_from_session_order(session_id, item, qty):
         cursor.close()
         conn.close()
         return "all_removed"
+def finalize_order_and_get_total(session_id, order_dict):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    order_id = get_next_order_id()
+
+    total = 0
+    for item_name, qty in order_dict.items():
+        cursor.execute("SELECT item_id, price FROM food_items WHERE name = %s", (item_name,))
+        row = cursor.fetchone()
+        if not row:
+            continue  # Skip invalid items
+
+        item_id, price = row
+        line_total = price * qty
+        total += line_total
+
+        cursor.execute("""
+            INSERT INTO orders (order_id, item_id, quantity, total_price)
+            VALUES (%s, %s, %s, %s)
+        """, (order_id, item_id, qty, line_total))
+
+    cursor.execute("INSERT INTO order_tracking (order_id, status) VALUES (%s, %s)", (order_id, "in progress"))
+    cursor.execute("DELETE FROM session_orders WHERE session_id = %s", (session_id,))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return order_id, total

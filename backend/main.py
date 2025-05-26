@@ -74,26 +74,24 @@ def complete_order(parameters: dict, session_id: str):
                 "fulfillmentText": "I'm having trouble finding your order. Can you start a new one?"
             })
 
-        order_id = save_to_db(order)
-        if order_id == -1:
-            message = "Sorry, something went wrong with your order. Please try again."
-        else:
-            total = db_helper.get_total_order_price(order_id)
-            message = (
-                f"✅ Your order has been placed!\n"
-                f"🆔 Order ID: {order_id}\n"
-                f"💰 Total: ₹{total}\n"
-                "📦 Status: In Progress\n"
-                "Please pay on delivery. Thanks!"
-            )
-        db_helper.clear_session_order(session_id)
-        return JSONResponse(content={"fulfillmentText": message})
+        # Save entire order in one DB connection
+        order_id, total = db_helper.finalize_order_and_get_total(session_id, order)
+
+        fulfillment_text = (
+            f"✅ Your order has been placed!\n"
+            f"🆔 Order ID: {order_id}\n"
+            f"💰 Total: ₹{total}\n"
+            "📦 Status: In Progress\n"
+            "Please pay on delivery. Thanks!"
+        )
+        return JSONResponse(content={"fulfillmentText": fulfillment_text})
 
     except Exception as e:
-        print(f"[ERROR] complete_order: {e}")
+        print(f"[Order Error] {e}")
         return JSONResponse(content={
-            "fulfillmentText": "Something went wrong while completing your order. Please try again."
+            "fulfillmentText": "Sorry, something went wrong with your order. Please try again."
         })
+
 
 def add_to_order(parameters: dict, session_id: str):
     try:
