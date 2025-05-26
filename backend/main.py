@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from backend import db_helper, generic_helper
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.background import BackgroundTasks
 
 app = FastAPI()
 
@@ -19,7 +18,7 @@ async def root():
     return {"message": "ByteBowl NLP backend is running!"}
 
 @app.post("/webhook")
-async def handle_request(request: Request, background_tasks: BackgroundTasks):
+async def handle_request(request: Request):
     payload = await request.json()
     intent = payload['queryResult']['intent']['displayName']
     parameters = payload['queryResult']['parameters']
@@ -39,12 +38,11 @@ async def handle_request(request: Request, background_tasks: BackgroundTasks):
     }
 
     if intent in intent_handler_dict:
-        return intent_handler_dict[intent](parameters, session_id, background_tasks)
+        return intent_handler_dict[intent](parameters, session_id)
     else:
         return JSONResponse(content={
             "fulfillmentText": f"Sorry, I don't know how to handle the intent '{intent}' yet."
         })
-    
 
 def new_order(parameters: dict, session_id: str):
     db_helper.clear_session_order(session_id)
