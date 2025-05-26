@@ -108,16 +108,27 @@ def add_to_order(parameters: dict, session_id: str):
         if len(food_items) != len(quantities):
             return JSONResponse(content={"fulfillmentText": "Please specify both food items and their quantities."})
 
-        for item, qty in zip(food_items, quantities):
-            db_helper.update_session_order(session_id, item, int(qty))
+        # ⚠️ Return early to avoid Dialogflow timeout
+        response_text = f"Added {', '.join([f'{q} {i}' for i, q in zip(food_items, quantities)])} to your order!"
+        JSONresponse = JSONResponse(content={"fulfillmentText": response_text})
 
-        current_order = db_helper.get_session_order(session_id)
-        order_str = generic_helper.get_str_from_food_dict(current_order)
-        return JSONResponse(content={"fulfillmentText": f"So far, you have: {order_str}. Anything else?"})
+        # Continue processing after response (not awaited)
+        import threading
+        threading.Thread(target=process_order_items, args=(session_id, food_items, quantities)).start()
+
+        return JSONresponse
 
     except Exception as e:
         print(f"[ERROR] add_to_order: {e}")
         return JSONResponse(content={"fulfillmentText": "Sorry, I couldn't add those items. Please try again."})
+
+def process_order_items(session_id, food_items, quantities):
+    for item, qty in zip(food_items, quantities):
+        try:
+            db_helper.update_session_order(session_id, item, int(qty))
+        except Exception as e:
+            print(f"[ERROR] async update failed for {item}: {e}")
+
 
 def remove_from_order(parameters: dict, session_id: str):
     try:
