@@ -89,65 +89,73 @@ def get_total_order_price(order_id):
 def update_session_order(session_id, item, quantity):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT quantity FROM session_orders WHERE session_id = %s AND item = %s", (session_id, item))
+
+    # Get item_id from food_items
+    cursor.execute("SELECT item_id FROM food_items WHERE name = %s", (item,))
+    result = cursor.fetchone()
+    if not result:
+        cursor.close()
+        return
+    item_id = result[0]
+
+    cursor.execute("SELECT quantity FROM session_orders WHERE session_id = %s AND item_id = %s", (session_id, item_id))
     existing = cursor.fetchone()
     if existing:
         cursor.execute(
-            "UPDATE session_orders SET quantity = quantity + %s WHERE session_id = %s AND item = %s",
-            (quantity, session_id, item)
+            "UPDATE session_orders SET quantity = quantity + %s WHERE session_id = %s AND item_id = %s",
+            (quantity, session_id, item_id)
         )
     else:
         cursor.execute(
-            "INSERT INTO session_orders (session_id, item, quantity) VALUES (%s, %s, %s)",
-            (session_id, item, quantity)
+            "INSERT INTO session_orders (session_id, item_id, quantity) VALUES (%s, %s, %s)",
+            (session_id, item_id, quantity)
         )
     conn.commit()
     cursor.close()
-    conn.close()
+
 
 def get_session_order(session_id):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT item, quantity FROM session_orders WHERE session_id = %s", (session_id,))
+
+    cursor.execute("""
+        SELECT f.name, s.quantity 
+        FROM session_orders s
+        JOIN food_items f ON s.item_id = f.item_id
+        WHERE s.session_id = %s
+    """, (session_id,))
+    
     rows = cursor.fetchall()
     cursor.close()
-    conn.close()
     return {item: quantity for item, quantity in rows}
 
-def clear_session_order(session_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM session_orders WHERE session_id = %s", (session_id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
 
 def remove_from_session_order(session_id, item, qty):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT quantity FROM session_orders WHERE session_id = %s AND item = %s", (session_id, item))
+
+    # Get item_id from food_items
+    cursor.execute("SELECT item_id FROM food_items WHERE name = %s", (item,))
     result = cursor.fetchone()
     if not result:
         cursor.close()
-        conn.close()
+        return "not_found"
+    item_id = result[0]
+
+    cursor.execute("SELECT quantity FROM session_orders WHERE session_id = %s AND item_id = %s", (session_id, item_id))
+    result = cursor.fetchone()
+    if not result:
+        cursor.close()
         return "not_found"
 
     current_qty = result[0]
     if current_qty > qty:
-        cursor.execute(
-            "UPDATE session_orders SET quantity = quantity - %s WHERE session_id = %s AND item = %s",
-            (qty, session_id, item)
-        )
+        cursor.execute("UPDATE session_orders SET quantity = quantity - %s WHERE session_id = %s AND item_id = %s", (qty, session_id, item_id))
         conn.commit()
         cursor.close()
-        conn.close()
         return "removed"
     else:
-        cursor.execute(
-            "DELETE FROM session_orders WHERE session_id = %s AND item = %s",
-            (session_id, item)
-        )
+        cursor.execute("DELETE FROM session_orders WHERE session_id = %s AND item_id = %s", (session_id, item_id))
         conn.commit()
         cursor.close()
-        conn.close()
         return "all_removed"
