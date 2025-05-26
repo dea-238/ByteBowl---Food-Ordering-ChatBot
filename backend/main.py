@@ -3,12 +3,12 @@ from fastapi.responses import JSONResponse
 from backend import db_helper
 from backend import generic_helper
 
+app = FastAPI()
+inprogress_orders = {}
+
 @app.get("/")
 async def root():
     return {"message": "ByteBowl NLP backend is running!"}
-
-app = FastAPI()
-inprogress_orders = {}
 
 @app.post("/webhook")
 async def handle_request(request: Request):
