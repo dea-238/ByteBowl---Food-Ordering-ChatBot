@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Byte.Bowl</title>
+    <link rel="icon" type="image/x-icon" href="icon.png">
+    <link rel="stylesheet" type="text/css" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+	<div class="container">
+<header style="background-color: #222; box-shadow: 0 2px 6px rgba(0,0,0,0.1); position: relative; z-index: 1000;">
+    <nav style="display: flex; justify-content: center; gap: 40px;">
+        <a href="#menu" style="color: #fff; text-decoration: none; font-size: 1.1em; font-weight: 500; transition: color 0.3s;">MENU</a>
+        <a href="#location" style="color: #fff; text-decoration: none; font-size: 1.1em; font-weight: 500; transition: color 0.3s;">LOCATION</a>
+        <a href="#contactus" style="color: #fff; text-decoration: none; font-size: 1.1em; font-weight: 500; transition: color 0.3s;">CONTACT US</a>
+    </nav>
+</header>
+
+
+    <section id="home">
+		<img src="banner.jpg" >
+    </section>
+
+    <section id="menu">
+        <img src="menu.png" alt="Menu">
+
+    </div>
+    </section>
+
+<section id="location" style="padding: 40px; background-color: #f9f9f9;">
+    <h2 style="text-align: center; font-size: 2em;">📍 Our Location</h2>
+    <p style="text-align: center; font-size: 1.2em; margin-bottom: 20px;">You can find us inside the CMRIT Canteen, Bengaluru</p>
+    <div style="display: flex; justify-content: center;">
+    </div>
+</section>
+
+<section id="contactus" style="padding: 40px; background-color: #fff;">
+    <h2 style="text-align: center; font-size: 2em;">📞 Contact Us</h2>
+    <p style="text-align: center; font-size: 1.2em;">Got questions? Want to place an order?</p>
+    <p style="text-align: center; font-size: 1.2em;">Email us at <a href="mailto:info@aifoodbot.com" style="color: #ff5722;">info@aifoodbot.com</a></p>
+</section>
+
+
+<script src="https://www.gstatic.com/dialogflow-console/fast/messenger/bootstrap.js?v=1"></script>
+<df-messenger
+  intent="WELCOME"
+  chat-title="FoodOrderBot"
+  agent-id="a357e3ef-a23e-40ca-8591-e6ced6f9a418"
+  language-code="en"
+></df-messenger>
+</body>
+</html>
