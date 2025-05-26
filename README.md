@@ -7,29 +7,6 @@ Fresh.AI is an intelligent food ordering web application powered by Dialogflow a
 
 ---
 
-## 📁 Project Structure
-
-```
-
-NLP ChatBot/
-├── backend/
-│   ├── main.py                  # FastAPI server handling Dialogflow webhook
-│   ├── db\_helper.py             # DB functions: insert, track, query
-│   ├── generic\_helper.py        # Utility: session handling, formatting
-│   └── requirements.txt         # Backend dependencies
-├── frontend/
-│   ├── index.html               # UI interface with embedded Dialogflow chatbot
-│   ├── styles.css               # Custom styles
-│   └── assets/                  # Banner, menu images
-├── dialogflow\_assets/          # Training phrases, intents, entities
-├── db/                         # MySQL dump and schema
-├── render.yaml                 # Render deployment config
-└── start.sh                    # Uvicorn start script
-
-````
-
----
-
 ## 🧠 Features
 
 - 🎙️ Natural conversation using Dialogflow CX or ES
