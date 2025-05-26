@@ -2,3 +2,5 @@ mysql-connector-python
 fastapi[all]
 uvicorn
 python-multipart
+python-dotenv
+pydantic-settings

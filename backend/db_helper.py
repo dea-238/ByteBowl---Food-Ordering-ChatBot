@@ -1,11 +1,20 @@
-import mysql.connector
+from dotenv import load_dotenv
+load_dotenv()
+import os
+from urllib.parse import urlparse
 
-cnx = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="password",
-    database="pandeyji_eatery"
-)
+def get_connection():
+    db_url = os.getenv("DATABASE_URL")
+    if db_url.startswith("mysql://"):
+        db_url = db_url.replace("mysql://", "")
+    parsed = urlparse(db_url)
+    return mysql.connector.connect(
+        host=parsed.hostname,
+        port=parsed.port or 3306,
+        user=parsed.username,
+        password=parsed.password,
+        database=parsed.path.lstrip('/')
+    )
 
 def get_connection():
     return cnx
