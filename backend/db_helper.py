@@ -1,15 +1,20 @@
+# db_helper.py
+
 import mysql.connector
 import os
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # Make sure this is called before accessing env vars
 
-# Initialize global connection object
 def get_connection():
     db_url = os.getenv("DATABASE_URL")
+
+    if not db_url:
+        raise Exception("DATABASE_URL is not set in environment variables")
+
     if db_url.startswith("mysql://"):
-        db_url = db_url.replace("mysql://", "")  
+        db_url = db_url.replace("mysql://", "")  # Remove scheme
 
     parsed = urlparse(db_url)
 
