@@ -2,9 +2,18 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from backend import db_helper
 from backend import generic_helper
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 inprogress_orders = {}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or specify Dialogflow's domain if needed
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 async def root():
