@@ -37,100 +37,125 @@ async def handle_request(request: Request):
         'track.order - context: ongoing-tracking': track_order
     }
 
-    if intent in intent_handler_dict:
-        return intent_handler_dict[intent](parameters, session_id)
+    handler = intent_handler_dict.get(intent)
+    if handler:
+        return handler(parameters, session_id)
     else:
         return JSONResponse(content={
             "fulfillmentText": f"Sorry, I don't know how to handle the intent '{intent}' yet."
         })
 
 def new_order(parameters: dict, session_id: str):
-    db_helper.clear_session_order(session_id)
+    try:
+        db_helper.clear_session_order(session_id)
+    except Exception as e:
+        print(f"[ERROR] clear_session_order: {e}")
     return JSONResponse(content={
         "fulfillmentText": "Okay! Let's start a new order. Please tell me what you'd like to order."
     })
 
 def save_to_db(order: dict):
-    order_id = db_helper.get_next_order_id()
-    for item, qty in order.items():
-        if db_helper.insert_order_item(item, qty, order_id) == -1:
-            return -1
-    db_helper.insert_order_tracking(order_id, "in progress")
-    return order_id
+    try:
+        order_id = db_helper.get_next_order_id()
+        for item, qty in order.items():
+            if db_helper.insert_order_item(item, qty, order_id) == -1:
+                return -1
+        db_helper.insert_order_tracking(order_id, "in progress")
+        return order_id
+    except Exception as e:
+        print(f"[ERROR] save_to_db: {e}")
+        return -1
 
 def complete_order(parameters: dict, session_id: str):
-    order = db_helper.get_session_order(session_id)
-    if not order:
+    try:
+        order = db_helper.get_session_order(session_id)
+        if not order:
+            return JSONResponse(content={
+                "fulfillmentText": "I'm having trouble finding your order. Can you start a new one?"
+            })
+
+        order_id = save_to_db(order)
+        if order_id == -1:
+            message = "Sorry, something went wrong with your order. Please try again."
+        else:
+            total = db_helper.get_total_order_price(order_id)
+            message = (
+                f"✅ Your order has been placed!\n"
+                f"🆔 Order ID: {order_id}\n"
+                f"💰 Total: ₹{total}\n"
+                "📦 Status: In Progress\n"
+                "Please pay on delivery. Thanks!"
+            )
+        db_helper.clear_session_order(session_id)
+        return JSONResponse(content={"fulfillmentText": message})
+
+    except Exception as e:
+        print(f"[ERROR] complete_order: {e}")
         return JSONResponse(content={
-            "fulfillmentText": "I'm having trouble finding your order. Can you start a new one?"
+            "fulfillmentText": "Something went wrong while completing your order. Please try again."
         })
 
-    order_id = save_to_db(order)
-    if order_id == -1:
-        message = "Sorry, something went wrong with your order. Please try again."
-    else:
-        total = db_helper.get_total_order_price(order_id)
-        message = (
-            f"✅ Your order has been placed!\n"
-            f"🆔 Order ID: {order_id}\n"
-            f"💰 Total: ₹{total}\n"
-            "📦 Status: In Progress\n"
-            "Please pay on delivery. Thanks!"
-        )
-    db_helper.clear_session_order(session_id)
-    return JSONResponse(content={"fulfillmentText": message})
-
 def add_to_order(parameters: dict, session_id: str):
-    food_items = parameters.get("food_items", [])
-    quantities = []
+    try:
+        food_items = parameters.get("food_items", [])
+        quantities = []
 
-    if "number" in parameters:
-        quantities += parameters["number"] if isinstance(parameters["number"], list) else [parameters["number"]]
-    if "number1" in parameters:
-        quantities += parameters["number1"] if isinstance(parameters["number1"], list) else [parameters["number1"]]
+        if "number" in parameters:
+            quantities += parameters["number"] if isinstance(parameters["number"], list) else [parameters["number"]]
+        if "number1" in parameters:
+            quantities += parameters["number1"] if isinstance(parameters["number1"], list) else [parameters["number1"]]
 
-    if len(food_items) != len(quantities):
-        return JSONResponse(content={"fulfillmentText": "Please specify both food items and their quantities."})
+        if len(food_items) != len(quantities):
+            return JSONResponse(content={"fulfillmentText": "Please specify both food items and their quantities."})
 
-    for item, qty in zip(food_items, quantities):
-        db_helper.update_session_order(session_id, item, int(qty))
+        for item, qty in zip(food_items, quantities):
+            db_helper.update_session_order(session_id, item, int(qty))
 
-    current_order = db_helper.get_session_order(session_id)
-    order_str = generic_helper.get_str_from_food_dict(current_order)
-    return JSONResponse(content={"fulfillmentText": f"So far, you have: {order_str}. Anything else?"})
+        current_order = db_helper.get_session_order(session_id)
+        order_str = generic_helper.get_str_from_food_dict(current_order)
+        return JSONResponse(content={"fulfillmentText": f"So far, you have: {order_str}. Anything else?"})
+
+    except Exception as e:
+        print(f"[ERROR] add_to_order: {e}")
+        return JSONResponse(content={"fulfillmentText": "Sorry, I couldn't add those items. Please try again."})
 
 def remove_from_order(parameters: dict, session_id: str):
-    food_items = parameters.get("food_items", [])
-    quantities = []
+    try:
+        food_items = parameters.get("food_items", [])
+        quantities = []
 
-    if "number" in parameters:
-        quantities += parameters["number"] if isinstance(parameters["number"], list) else [parameters["number"]]
-    if "number1" in parameters:
-        quantities += parameters["number1"] if isinstance(parameters["number1"], list) else [parameters["number1"]]
+        if "number" in parameters:
+            quantities += parameters["number"] if isinstance(parameters["number"], list) else [parameters["number"]]
+        if "number1" in parameters:
+            quantities += parameters["number1"] if isinstance(parameters["number1"], list) else [parameters["number1"]]
 
-    removed, not_found = [], []
-    for idx, item in enumerate(food_items):
-        qty = int(quantities[idx]) if idx < len(quantities) else 1
-        result = db_helper.remove_from_session_order(session_id, item, qty)
-        if result == "removed":
-            removed.append(f"{qty} {item}")
-        elif result == "all_removed":
-            removed.append(f"all {item}")
+        removed, not_found = [], []
+        for idx, item in enumerate(food_items):
+            qty = int(quantities[idx]) if idx < len(quantities) else 1
+            result = db_helper.remove_from_session_order(session_id, item, qty)
+            if result == "removed":
+                removed.append(f"{qty} {item}")
+            elif result == "all_removed":
+                removed.append(f"all {item}")
+            else:
+                not_found.append(item)
+
+        current_order = db_helper.get_session_order(session_id)
+        msg = ""
+        if removed:
+            msg += f"Removed {', '.join(removed)}. "
+        if not_found:
+            msg += f"{', '.join(not_found)} were not found in your order. "
+        if not current_order:
+            msg += "Your order is now empty."
         else:
-            not_found.append(item)
-
-    current_order = db_helper.get_session_order(session_id)
-    msg = ""
-    if removed:
-        msg += f"Removed {', '.join(removed)}. "
-    if not_found:
-        msg += f"{', '.join(not_found)} were not found in your order. "
-    if not current_order:
-        msg += "Your order is now empty."
-    else:
-        order_str = generic_helper.get_str_from_food_dict(current_order)
-        msg += f"Remaining items: {order_str}"
-    return JSONResponse(content={"fulfillmentText": msg})
+            order_str = generic_helper.get_str_from_food_dict(current_order)
+            msg += f"Remaining items: {order_str}"
+        return JSONResponse(content={"fulfillmentText": msg})
+    
+    except Exception as e:
+        print(f"[ERROR] remove_from_order: {e}")
+        return JSONResponse(content={"fulfillmentText": "There was a problem removing items. Please try again."})
 
 def track_order(parameters: dict, session_id: str):
     try:
@@ -142,5 +167,6 @@ def track_order(parameters: dict, session_id: str):
             return JSONResponse(content={"fulfillmentText": f"Order ID {order_id} is currently: {status}"})
         else:
             return JSONResponse(content={"fulfillmentText": f"No order found with ID {order_id}"})
-    except Exception:
+    except Exception as e:
+        print(f"[ERROR] track_order: {e}")
         return JSONResponse(content={"fulfillmentText": "Please provide a valid Order ID to track."})
