@@ -2,12 +2,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from backend import db_helper, generic_helper
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.background import BackgroundTasks
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all for Dialogflow webhook
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -18,7 +19,7 @@ async def root():
     return {"message": "ByteBowl NLP backend is running!"}
 
 @app.post("/webhook")
-async def handle_request(request: Request):
+async def handle_request(request: Request, background_tasks: BackgroundTasks):
     payload = await request.json()
     intent = payload['queryResult']['intent']['displayName']
     parameters = payload['queryResult']['parameters']
@@ -38,11 +39,12 @@ async def handle_request(request: Request):
     }
 
     if intent in intent_handler_dict:
-        return intent_handler_dict[intent](parameters, session_id)
+        return intent_handler_dict[intent](parameters, session_id, background_tasks)
     else:
         return JSONResponse(content={
             "fulfillmentText": f"Sorry, I don't know how to handle the intent '{intent}' yet."
         })
+    
 
 def new_order(parameters: dict, session_id: str):
     db_helper.clear_session_order(session_id)
@@ -51,34 +53,34 @@ def new_order(parameters: dict, session_id: str):
     })
 
 def save_to_db(order: dict):
-    next_order_id = db_helper.get_next_order_id()
-    for food_item, quantity in order.items():
-        if db_helper.insert_order_item(food_item, quantity, next_order_id) == -1:
+    order_id = db_helper.get_next_order_id()
+    for item, qty in order.items():
+        if db_helper.insert_order_item(item, qty, order_id) == -1:
             return -1
-    db_helper.insert_order_tracking(next_order_id, "in progress")
-    return next_order_id
+    db_helper.insert_order_tracking(order_id, "in progress")
+    return order_id
 
 def complete_order(parameters: dict, session_id: str):
     order = db_helper.get_session_order(session_id)
     if not order:
         return JSONResponse(content={
-            "fulfillmentText": "I'm having trouble finding your order. Can you please start a new one?"
+            "fulfillmentText": "I'm having trouble finding your order. Can you start a new one?"
         })
 
     order_id = save_to_db(order)
     if order_id == -1:
-        fulfillment_text = "Sorry, I couldn't process your order due to a backend error. Please try again."
+        message = "Sorry, something went wrong with your order. Please try again."
     else:
         total = db_helper.get_total_order_price(order_id)
-        fulfillment_text = (
-            f"✅ Your order has been placed successfully!\n"
+        message = (
+            f"✅ Your order has been placed!\n"
             f"🆔 Order ID: {order_id}\n"
             f"💰 Total: ₹{total}\n"
-            f"📦 Status: In Progress\n"
-            f"Please pay at the time of delivery. Thank you!"
+            "📦 Status: In Progress\n"
+            "Please pay on delivery. Thanks!"
         )
     db_helper.clear_session_order(session_id)
-    return JSONResponse(content={"fulfillmentText": fulfillment_text})
+    return JSONResponse(content={"fulfillmentText": message})
 
 def add_to_order(parameters: dict, session_id: str):
     food_items = parameters.get("food_items", [])
@@ -90,16 +92,14 @@ def add_to_order(parameters: dict, session_id: str):
         quantities += parameters["number1"] if isinstance(parameters["number1"], list) else [parameters["number1"]]
 
     if len(food_items) != len(quantities):
-        return JSONResponse(content={
-            "fulfillmentText": "Sorry, I didn't understand. Please specify items and their quantities."
-        })
+        return JSONResponse(content={"fulfillmentText": "Please specify both food items and their quantities."})
 
     for item, qty in zip(food_items, quantities):
         db_helper.update_session_order(session_id, item, int(qty))
 
     current_order = db_helper.get_session_order(session_id)
     order_str = generic_helper.get_str_from_food_dict(current_order)
-    return JSONResponse(content={"fulfillmentText": f"So far you have: {order_str}. Anything else?"})
+    return JSONResponse(content={"fulfillmentText": f"So far, you have: {order_str}. Anything else?"})
 
 def remove_from_order(parameters: dict, session_id: str):
     food_items = parameters.get("food_items", [])
@@ -124,15 +124,14 @@ def remove_from_order(parameters: dict, session_id: str):
     current_order = db_helper.get_session_order(session_id)
     msg = ""
     if removed:
-        msg += f"Removed {', '.join(removed)} from your order!"
+        msg += f"Removed {', '.join(removed)}. "
     if not_found:
-        msg += f" You don’t have {', '.join(not_found)} in your order."
+        msg += f"{', '.join(not_found)} were not found in your order. "
     if not current_order:
-        msg += " Your order is now empty."
+        msg += "Your order is now empty."
     else:
         order_str = generic_helper.get_str_from_food_dict(current_order)
-        msg += f" Here's what's left: {order_str}"
-
+        msg += f"Remaining items: {order_str}"
     return JSONResponse(content={"fulfillmentText": msg})
 
 def track_order(parameters: dict, session_id: str):
@@ -142,9 +141,8 @@ def track_order(parameters: dict, session_id: str):
             raise ValueError("Missing order ID")
         status = db_helper.get_order_status(order_id)
         if status:
-            msg = f"The status for Order ID {order_id} is: {status}"
+            return JSONResponse(content={"fulfillmentText": f"Order ID {order_id} is currently: {status}"})
         else:
-            msg = f"No order found with ID {order_id}"
+            return JSONResponse(content={"fulfillmentText": f"No order found with ID {order_id}"})
     except Exception:
-        msg = "Invalid or missing order ID. Please try again."
-    return JSONResponse(content={"fulfillmentText": msg})
+        return JSONResponse(content={"fulfillmentText": "Please provide a valid Order ID to track."})
