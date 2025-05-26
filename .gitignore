@@ -1,1 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.eggs/
+*.pyo
+
+# Virtual Environments
 venv/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Environment Variables
+.env
+
+# IDEs
+.vscode/
+.idea/
+
+# Pytest
+.cache/
+
+# Render/Deployment generated files
+*.db
