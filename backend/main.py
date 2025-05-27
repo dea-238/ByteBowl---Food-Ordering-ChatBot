@@ -171,26 +171,60 @@ async def remove_from_order(parameters: dict, session_id: str):
     """Remove items from the order"""
     try:
         food_items = parameters.get("food_items", [])
+        
+        # Extract quantities from all possible parameter fields
         quantities = []
+        
+        # Check for number parameters in the current request
+        for param_name in ["number", "number1", "number2", "number3"]:
+            if param_name in parameters:
+                param_val = parameters[param_name]
+                if isinstance(param_val, list):
+                    quantities.extend(param_val)
+                else:
+                    quantities.append(param_val)
+        
+        # Also check the original parameters from context (sometimes quantities are in context)
+        for param_name in ["number.original", "number1.original", "number2.original"]:
+            if param_name in parameters:
+                param_val = parameters[param_name]
+                if isinstance(param_val, list):
+                    quantities.extend([int(x) for x in param_val if str(x).isdigit()])
+                elif str(param_val).isdigit():
+                    quantities.append(int(param_val))
 
-        if "number" in parameters:
-            quantities += parameters["number"] if isinstance(parameters["number"], list) else [parameters["number"]]
-        if "number1" in parameters:
-            quantities += parameters["number1"] if isinstance(parameters["number1"], list) else [parameters["number1"]]
+        # Fallback: Try to extract numbers from the query text if no quantities found
+        if not quantities and 'queryText' in parameters:
+            import re
+            query_text = parameters.get('queryText', '')
+            numbers = re.findall(r'\b(\d+)\b', query_text)
+            quantities = [int(n) for n in numbers]
+
+        # Log for debugging
+        logger.info(f"Remove request - Items: {food_items}, Quantities: {quantities}, Session: {session_id}")
+        logger.info(f"All parameters: {parameters}")
 
         # Run database operations in thread pool
         loop = asyncio.get_event_loop()
+        
+        # First, let's check what's actually in the session order
+        current_order_before = await loop.run_in_executor(executor, db_helper.get_session_order, session_id)
+        logger.info(f"Current order before removal: {current_order_before}")
         
         removed, not_found = [], []
         for idx, item in enumerate(food_items):
             try:
                 qty = int(quantities[idx]) if idx < len(quantities) else 1
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, IndexError):
                 qty = 1
                 
+            logger.info(f"Attempting to remove {qty} {item} from session {session_id}")
+            
             result = await loop.run_in_executor(
                 executor, db_helper.remove_from_session_order, session_id, item, qty
             )
+            
+            logger.info(f"Remove result for {item}: {result}")
             
             if result == "removed":
                 removed.append(f"{qty} {item}")
@@ -198,9 +232,12 @@ async def remove_from_order(parameters: dict, session_id: str):
                 removed.append(f"all {item}")
             elif result == "not_found":
                 not_found.append(item)
+            elif result == "error":
+                logger.error(f"Database error removing {item}")
 
-        # Get current order status
+        # Get current order status after removal
         current_order = await loop.run_in_executor(executor, db_helper.get_session_order, session_id)
+        logger.info(f"Current order after removal: {current_order}")
         
         msg = ""
         if removed:
@@ -268,6 +305,31 @@ async def process_order_batch(session_id: str, items_to_add: dict):
             logger.error(f"Failed to add some items to session {session_id}: {items_to_add}")
     except Exception as e:
         logger.error(f"Error processing order batch for session {session_id}: {e}")
+
+# Debug endpoint to check session orders
+@app.get("/debug/session/{session_id}")
+async def debug_session(session_id: str):
+    """Debug endpoint to check what's in a session order"""
+    try:
+        loop = asyncio.get_event_loop()
+        session_order = await loop.run_in_executor(executor, db_helper.get_session_order, session_id)
+        
+        # Also get all available food items for reference
+        with db_helper.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM food_items ORDER BY name")
+            all_items = [row[0] for row in cursor.fetchall()]
+            cursor.close()
+        
+        return {
+            "session_id": session_id,
+            "current_order": session_order,
+            "available_items": all_items[:10],  # First 10 items for reference
+            "total_available_items": len(all_items)
+        }
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
+        return {"error": str(e)}
 
 # Health check endpoint
 @app.get("/health")

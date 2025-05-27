@@ -204,27 +204,46 @@ def clear_session_order(session_id):
         return False
 
 def remove_from_session_order(session_id, item, qty):
-    """Remove items from session order"""
+    """Remove items from session order with improved error handling and logging"""
     try:
         with get_connection() as conn:
             cursor = conn.cursor()
             
-            # Get item_id and current quantity in one transaction
+            logger.info(f"Removing {qty} {item} from session {session_id}")
+            
+            # Get item_id and current quantity in one transaction with better matching
+            # Try exact match first, then partial match
             cursor.execute("""
-                SELECT f.item_id, COALESCE(s.quantity, 0) as current_qty
+                SELECT f.item_id, f.name, COALESCE(s.quantity, 0) as current_qty
                 FROM food_items f
                 LEFT JOIN session_orders s ON f.item_id = s.item_id AND s.session_id = %s
                 WHERE f.name = %s
+                LIMIT 1
             """, (session_id, item))
             
             result = cursor.fetchone()
-            if not result or result[0] is None:
+            
+            # If exact match not found, try partial match (case insensitive)
+            if not result:
+                cursor.execute("""
+                    SELECT f.item_id, f.name, COALESCE(s.quantity, 0) as current_qty
+                    FROM food_items f
+                    LEFT JOIN session_orders s ON f.item_id = s.item_id AND s.session_id = %s
+                    WHERE LOWER(f.name) LIKE LOWER(%s) OR LOWER(%s) LIKE LOWER(CONCAT('%', f.name, '%'))
+                    LIMIT 1
+                """, (session_id, f"%{item}%", item))
+                result = cursor.fetchone()
+            
+            if not result:
+                logger.warning(f"Item '{item}' not found in food_items table")
                 cursor.close()
                 return "not_found"
             
-            item_id, current_qty = result
+            item_id, actual_name, current_qty = result
+            logger.info(f"Found item: {actual_name} (ID: {item_id}) with current quantity: {current_qty}")
             
             if current_qty == 0:
+                logger.info(f"Item {actual_name} not in session order")
                 cursor.close()
                 return "not_found"
             
@@ -234,6 +253,7 @@ def remove_from_session_order(session_id, item, qty):
                     WHERE session_id = %s AND item_id = %s
                 """, (qty, session_id, item_id))
                 conn.commit()
+                logger.info(f"Reduced {actual_name} quantity by {qty}")
                 cursor.close()
                 return "removed"
             else:
@@ -242,6 +262,7 @@ def remove_from_session_order(session_id, item, qty):
                     WHERE session_id = %s AND item_id = %s
                 """, (session_id, item_id))
                 conn.commit()
+                logger.info(f"Removed all {actual_name} from order")
                 cursor.close()
                 return "all_removed"
     except Exception as e:
