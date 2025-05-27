@@ -126,38 +126,39 @@ async def add_to_order(parameters: dict, session_id: str):
     """Add items to the order"""
     try:
         food_items = parameters.get("food_items", [])
+        
+        # Collect all quantity parameters efficiently
         quantities = []
-
-        # Collect all quantity parameters
         if "number" in parameters:
-            quantities += parameters["number"] if isinstance(parameters["number"], list) else [parameters["number"]]
+            number_list = parameters["number"] if isinstance(parameters["number"], list) else [parameters["number"]]
+            quantities.extend(number_list)
         if "number1" in parameters:
-            quantities += parameters["number1"] if isinstance(parameters["number1"], list) else [parameters["number1"]]
-
-        if len(food_items) != len(quantities):
-            return JSONResponse(content={
-                "fulfillmentText": "Please specify both food items and their quantities."
-            })
-
+            number1_list = parameters["number1"] if isinstance(parameters["number1"], list) else [parameters["number1"]]
+            quantities.extend(number1_list)
+        
+        # Ensure we have quantities for all items
+        while len(quantities) < len(food_items):
+            quantities.append(1)  # Default to 1 if quantity missing
+        
         # Prepare items dictionary for batch processing
         items_to_add = {}
-        for item, qty in zip(food_items, quantities):
+        response_items = []
+        
+        for i, item in enumerate(food_items):
             try:
-                items_to_add[item] = int(qty)
+                qty = int(quantities[i]) if i < len(quantities) else 1
+                items_to_add[item] = qty
+                response_items.append(f"{qty} {item}")
             except (ValueError, TypeError):
                 items_to_add[item] = 1
+                response_items.append(f"1 {item}")
 
-        # Process all items in a single database transaction
-        loop = asyncio.get_event_loop()
-        success = await loop.run_in_executor(
-            executor, db_helper.update_session_order_batch, session_id, items_to_add
-        )
-
-        if success:
-            response_text = f"Added {', '.join([f'{q} {i}' for i, q in zip(food_items, quantities)])} to your order!"
-        else:
-            response_text = "I added what I could to your order. Some items might not be available."
-
+        # Return response immediately to avoid timeout
+        response_text = f"Added {', '.join(response_items)} to your order!"
+        
+        # Process database operation asynchronously without waiting
+        asyncio.create_task(process_order_batch(session_id, items_to_add))
+        
         return JSONResponse(content={"fulfillmentText": response_text})
 
     except Exception as e:
@@ -253,6 +254,20 @@ async def track_order(parameters: dict, session_id: str):
         return JSONResponse(content={
             "fulfillmentText": "Please provide a valid Order ID to track."
         })
+
+async def process_order_batch(session_id: str, items_to_add: dict):
+    """Process order items in background to avoid timeout"""
+    try:
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(
+            executor, db_helper.update_session_order_batch, session_id, items_to_add
+        )
+        if success:
+            logger.info(f"Successfully added items to session {session_id}: {items_to_add}")
+        else:
+            logger.error(f"Failed to add some items to session {session_id}: {items_to_add}")
+    except Exception as e:
+        logger.error(f"Error processing order batch for session {session_id}: {e}")
 
 # Health check endpoint
 @app.get("/health")

@@ -126,56 +126,40 @@ def get_total_order_price(order_id):
 # ---------- Session Order Management ----------
 
 def update_session_order_batch(session_id, items_dict):
-    """Update session order with multiple items in a single transaction"""
+    """Update session order with multiple items in a single transaction - optimized"""
+    if not items_dict:
+        return True
+        
     try:
         with get_connection() as conn:
             cursor = conn.cursor()
             
-            # Get all item IDs in one query
+            # Get all item IDs in one query with better error handling
             item_names = list(items_dict.keys())
             placeholders = ','.join(['%s'] * len(item_names))
             cursor.execute(f"SELECT name, item_id FROM food_items WHERE name IN ({placeholders})", item_names)
             name_to_id = {name: item_id for name, item_id in cursor.fetchall()}
             
-            # Check existing quantities in one query
-            item_ids = list(name_to_id.values())
-            if item_ids:
-                placeholders = ','.join(['%s'] * len(item_ids))
-                cursor.execute(f"""
-                    SELECT item_id, quantity FROM session_orders 
-                    WHERE session_id = %s AND item_id IN ({placeholders})
-                """, [session_id] + item_ids)
-                existing_quantities = {item_id: qty for item_id, qty in cursor.fetchall()}
-            else:
-                existing_quantities = {}
+            # Skip items not found in database
+            valid_items = {name: qty for name, qty in items_dict.items() if name in name_to_id}
+            if not valid_items:
+                cursor.close()
+                logger.warning("No valid items found in database")
+                return False
             
-            # Prepare batch operations
-            updates = []
-            inserts = []
+            # Use INSERT ... ON DUPLICATE KEY UPDATE for better performance
+            item_ids = [name_to_id[name] for name in valid_items.keys()]
+            quantities = list(valid_items.values())
             
-            for item_name, quantity in items_dict.items():
-                if item_name not in name_to_id:
-                    logger.warning(f"Item {item_name} not found in database")
-                    continue
-                    
-                item_id = name_to_id[item_name]
-                if item_id in existing_quantities:
-                    updates.append((quantity, session_id, item_id))
-                else:
-                    inserts.append((session_id, item_id, quantity))
+            # Prepare data for upsert
+            upsert_data = [(session_id, name_to_id[name], qty) for name, qty in valid_items.items()]
             
-            # Execute batch operations
-            if updates:
-                cursor.executemany("""
-                    UPDATE session_orders SET quantity = quantity + %s 
-                    WHERE session_id = %s AND item_id = %s
-                """, updates)
-            
-            if inserts:
-                cursor.executemany("""
-                    INSERT INTO session_orders (session_id, item_id, quantity) 
-                    VALUES (%s, %s, %s)
-                """, inserts)
+            # Use MySQL's INSERT ... ON DUPLICATE KEY UPDATE for atomic upsert
+            cursor.executemany("""
+                INSERT INTO session_orders (session_id, item_id, quantity) 
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)
+            """, upsert_data)
             
             conn.commit()
             cursor.close()
