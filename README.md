@@ -1,7 +1,7 @@
 ﻿# ByteBowl---Food-Ordering-ChatBot
 
 ```markdown
-# 🤖 Fresh.AI — Smart Food Ordering Assistant
+# 🤖 ByteBowl — Smart Food Ordering Assistant
 
 Fresh.AI is an intelligent food ordering web application powered by Dialogflow and FastAPI. Users can interact with a smart chatbot to place, modify, track, or cancel food orders, with full backend support and a real-time conversational UI.
 
